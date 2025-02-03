@@ -8,7 +8,7 @@ import yaml
 from rich.console import Console
 
 from arcade.cli.constants import LOGIN_FAILED_HTML, LOGIN_SUCCESS_HTML
-from arcade.cli.utils import create_new_env_file, is_config_file_deprecated
+from arcade.cli.utils import create_new_env_file
 
 console = Console()
 
@@ -58,11 +58,12 @@ class LoginCallbackHandler(BaseHTTPRequestHandler):
 
         # ensure the ~/.arcade directory exists
         # TODO: this should use WORK_DIR from env if set
-        if not os.path.exists(os.path.expanduser("~/.arcade")):
-            os.makedirs(os.path.expanduser("~/.arcade"), exist_ok=True)
+        arcade_dir = os.path.join(os.path.expanduser("~"), ".arcade")
+        if not os.path.exists(arcade_dir):
+            os.makedirs(arcade_dir, exist_ok=True)
 
         # TODO don't overwrite existing config
-        config_file_path = os.path.expanduser("~/.arcade/credentials.yaml")
+        config_file_path = os.path.join(arcade_dir, "credentials.yaml")
         new_config = {"cloud": {"api": {"key": api_key}, "user": {"email": email}}}
         with open(config_file_path, "w") as f:
             yaml.dump(new_config, f)
@@ -116,11 +117,8 @@ def check_existing_login() -> bool:
     Check if the user is already logged in by verifying the config file.
 
     Returns:
-        bool: True if the user is already logged in or is using the deprecated config file, False otherwise.
+        bool: True if the user is already logged in, False otherwise.
     """
-    if is_config_file_deprecated():
-        return True
-
     # Create a new env file if one doesn't already exist
     create_new_env_file()
 

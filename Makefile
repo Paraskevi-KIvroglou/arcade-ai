@@ -91,15 +91,35 @@ build-and-publish: build publish ## Build and publish.
 docker: ## Build and run the Docker container
 	@echo "🚀 Building arcade and toolkit wheels..."
 	@make full-dist
-	@echo "Writing extras [fastapi, evals] to requirements.txt"
-	@cd arcade && poetry export --extras "fastapi evals" --output ../dist/requirements.txt
+	@echo "Writing extras requirements.txt"
+	@cd arcade && poetry export --extras "fastapi" --output ../dist/requirements.txt
 	@echo "🚀 Building Docker image"
 	@cd docker && make docker-build
 	@cd docker && make docker-run
 
+.PHONY: docker-base
+docker-base: ## Build and run the Docker container
+	@echo "🚀 Building arcade and toolkit wheels..."
+	@make full-dist
+	@echo "Writing extras requirements.txt"
+	@cd arcade && poetry export --extras "fastapi" --output ../dist/requirements.txt
+	@echo "🚀 Building Docker image"
+	@cd docker && INSTALL_TOOLKITS=false make docker-build
+	@cd docker && INSTALL_TOOLKITS=false make docker-run
+
 .PHONY: publish-ecr
 publish-ecr: ## Publish to the ECR
-	@cd docker && make publish-ecr
+    # Publish the base image - <ECR_ENDPOINT>/arcadeai/worker-base
+	@cd docker && INSTALL_TOOLKITS=false make publish-ecr
+    # Publish the image with toolkits - <ECR_ENDPOINT>/arcadeai/worker
+	@cd docker && INSTALL_TOOLKITS=true make publish-ecr
+
+.PHONY: publish-ghcr
+publish-ghcr: ## Publish to the GHCR
+    # Publish the base image - ghcr.io/arcadeai/worker-base
+	@cd docker && INSTALL_TOOLKITS=false make publish-ghcr
+    # Publish the image with toolkits - ghcr.io/arcadeai/worker
+	@cd docker && INSTALL_TOOLKITS=true make publish-ghcr
 
 .PHONY: full-dist
 full-dist: clean-dist ## Build all projects and copy wheels to ./dist
@@ -108,8 +128,8 @@ full-dist: clean-dist ## Build all projects and copy wheels to ./dist
 	@echo "Setting version to $(VERSION)"
 	@make set-version
 
-	@echo "🛠️ Building all projects and copying wheels to ./dist"
-	@mkdir -p dist/toolkits
+	# @echo "🛠️ Building all projects and copying wheels to ./dist"
+	@mkdir -p dist
 
 	# Build the main arcade project
 	@echo "🛠️ Building arcade project wheel..."
@@ -121,23 +141,6 @@ full-dist: clean-dist ## Build all projects and copy wheels to ./dist
 	@echo "Reset version to default (0.1.0)"
 	@make unset-version
 
-	@echo "🛠️ Building all projects and copying wheels to ./dist"
-	# Build and copy wheels for each toolkit
-	@for toolkit_dir in toolkits/*; do \
-		if [ -d "$$toolkit_dir" ]; then \
-			toolkit_name=$$(basename "$$toolkit_dir"); \
-			echo "Building $$toolkit_name project..."; \
-			cd "$$toolkit_dir" && poetry version $(VERSION); \
-            awk '{gsub(/arcade-ai = "0.1.\*"/, "arcade-ai = \"$(VERSION)\"")}1' pyproject.toml > temp_file && mv temp_file pyproject.toml; \
-            poetry build; \
-			cp dist/*.whl ../../dist/toolkits; \
-            poetry version 0.1.0; \
-            awk '{gsub(/arcade-ai = "$(VERSION)"/, "arcade-ai = \"0.1.\*\"")}1' pyproject.toml > temp_file && mv temp_file pyproject.toml; \
-			cd -; \
-		fi; \
-	done
-
-	@echo "✅ All toolkits built and wheels copied to ./dist"
 
 .PHONY: clean-dist
 clean-dist: ## Clean all built distributions
@@ -154,7 +157,7 @@ clean-dist: ## Clean all built distributions
 
 .PHONY: help
 help:
-	@echo "🛠️ Arcade AI Dev Commands:\n"
+	@echo "🛠️ Arcade Dev Commands:\n"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
 

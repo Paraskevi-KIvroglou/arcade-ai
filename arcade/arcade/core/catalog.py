@@ -1,5 +1,8 @@
 import asyncio
 import inspect
+import logging
+import os
+import re
 import typing
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -34,7 +37,7 @@ from arcade.core.schema import (
     ToolAuthRequirement,
     ToolContext,
     ToolDefinition,
-    ToolInputs,
+    ToolInput,
     ToolkitDefinition,
     ToolOutput,
     ToolRequirements,
@@ -48,6 +51,8 @@ from arcade.core.utils import (
     is_union,
     snake_to_pascal_case,
 )
+
+logger = logging.getLogger(__name__)
 
 InnerWireType = Literal["string", "integer", "number", "boolean", "json"]
 WireType = Union[InnerWireType, Literal["array"]]
@@ -108,9 +113,56 @@ class MaterializedTool(BaseModel):
 
 
 class ToolCatalog(BaseModel):
-    """Singleton class that holds all tools for a given actor"""
+    """Singleton class that holds all tools for a given worker"""
 
     _tools: dict[FullyQualifiedName, MaterializedTool] = {}
+
+    _disabled_tools: set[str] = set()
+    _disabled_toolkits: set[str] = set()
+
+    def __init__(self, **data) -> None:  # type: ignore[no-untyped-def]
+        super().__init__(**data)
+        self._load_disabled_tools()
+        self._load_disabled_toolkits()
+
+    def _load_disabled_tools(self) -> None:
+        """Load disabled tools from the environment variable.
+
+        The ARCADE_DISABLED_TOOLS environment variable should contain a
+        comma-separated list of tools that are to be excluded from the
+        catalog.
+
+        The expected format for each disabled tool is:
+        - [CamelCaseToolkitName][TOOL_NAME_SEPARATOR][CamelCaseToolName]
+        """
+        disabled_tools = os.getenv("ARCADE_DISABLED_TOOLS", "").strip().split(",")
+        if not disabled_tools:
+            return
+
+        pattern = re.compile(rf"^[a-zA-Z]+{re.escape(TOOL_NAME_SEPARATOR)}[a-zA-Z]+$")
+
+        for tool in disabled_tools:
+            if not pattern.match(tool):
+                continue
+
+            self._disabled_tools.add(tool.lower())
+
+    def _load_disabled_toolkits(self) -> None:
+        """Load disabled toolkits from the environment variable.
+
+        The ARCADE_DISABLED_TOOLKITS environment variable should contain a
+        comma-separated list of toolkits that are to be excluded from the
+        catalog.
+
+        The expected format for each disabled toolkit is:
+        - [CamelCaseToolkitName]
+        """
+        disabled_toolkits = os.getenv("ARCADE_DISABLED_TOOLKITS", "").strip().split(",")
+        if not disabled_toolkits:
+            return
+
+        for toolkit in disabled_toolkits:
+            self._disabled_toolkits.add(toolkit.lower())
 
     def add_tool(
         self,
@@ -146,6 +198,14 @@ class ToolCatalog(BaseModel):
         if fully_qualified_name in self._tools:
             raise KeyError(f"Tool '{definition.name}' already exists in the catalog.")
 
+        if str(fully_qualified_name).lower() in self._disabled_tools:
+            logger.info(f"Tool '{fully_qualified_name!s}' is disabled and will not be cataloged.")
+            return
+
+        if str(toolkit_name).lower() in self._disabled_toolkits:
+            logger.info(f"Toolkit '{toolkit_name!s}' is disabled and will not be cataloged.")
+            return
+
         self._tools[fully_qualified_name] = MaterializedTool(
             definition=definition,
             tool=tool_func,
@@ -170,6 +230,10 @@ class ToolCatalog(BaseModel):
         """
         Add the tools from a loaded toolkit to the catalog.
         """
+
+        if str(toolkit).lower() in self._disabled_toolkits:
+            logger.info(f"Toolkit '{toolkit.name!s}' is disabled and will not be cataloged.")
+            return
 
         for module_name, tool_names in toolkit.tools.items():
             for tool_name in tool_names:
@@ -271,6 +335,12 @@ class ToolCatalog(BaseModel):
 
         raise ValueError(f"Tool {name} not found.")
 
+    def get_tool_count(self) -> int:
+        """
+        Get the number of tools in the catalog.
+        """
+        return len(self._tools)
+
     @staticmethod
     def create_tool_definition(
         tool: Callable,
@@ -298,6 +368,7 @@ class ToolCatalog(BaseModel):
             new_auth_requirement = ToolAuthRequirement(
                 provider_id=auth_requirement.provider_id,
                 provider_type=auth_requirement.provider_type,
+                id=auth_requirement.id,
             )
             if isinstance(auth_requirement, OAuth2):
                 new_auth_requirement.oauth2 = OAuth2Requirement(**auth_requirement.model_dump())
@@ -317,7 +388,7 @@ class ToolCatalog(BaseModel):
             fully_qualified_name=str(fully_qualified_name),
             description=tool_description,
             toolkit=toolkit_definition,
-            inputs=create_input_definition(tool),
+            input=create_input_definition(tool),
             output=create_output_definition(tool),
             requirements=ToolRequirements(
                 authorization=auth_requirement,
@@ -325,7 +396,7 @@ class ToolCatalog(BaseModel):
         )
 
 
-def create_input_definition(func: Callable) -> ToolInputs:
+def create_input_definition(func: Callable) -> ToolInput:
     """
     Create an input model for a function based on its parameters.
     """
@@ -363,7 +434,7 @@ def create_input_definition(func: Callable) -> ToolInputs:
             )
         )
 
-    return ToolInputs(
+    return ToolInput(
         parameters=input_parameters, tool_context_parameter_name=tool_context_param_name
     )
 

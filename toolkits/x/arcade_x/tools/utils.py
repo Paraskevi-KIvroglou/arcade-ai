@@ -12,12 +12,15 @@ def get_tweet_url(tweet_id: str) -> str:
 def get_headers_with_token(context: ToolContext) -> dict[str, str]:
     """Get the headers for a request to the X API."""
     if context.authorization is None or context.authorization.token is None:
-        raise ToolExecutionError(  # noqa: TRY003
+        raise ToolExecutionError(
             "Missing Token. Authorization is required to post a tweet.",
             developer_message="Token is not set in the ToolContext.",
         )
+    token = (
+        context.authorization.token if context.authorization and context.authorization.token else ""
+    )
     return {
-        "Authorization": f"Bearer {context.authorization.token}",
+        "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     }
 
@@ -28,7 +31,7 @@ def parse_search_recent_tweets_response(response_data: dict[str, Any]) -> dict[s
     Returns the modified response data with added 'tweet_url', 'author_username', and 'author_name'.
     """
     if not sanity_check_tweets_data(response_data):
-        return {"data": []}
+        return {"data": [], "next_token": ""}
 
     # Add 'tweet_url' to each tweet
     for tweet in response_data["data"]:
@@ -53,6 +56,17 @@ def sanity_check_tweets_data(tweets_data: dict[str, Any]) -> bool:
     if not tweets_data.get("includes", {}).get("users"):  # noqa: SIM103
         return False
     return True
+
+
+def expand_long_tweet(tweet_data: dict[str, Any]) -> None:
+    """Expand a long tweet.
+
+    For tweets exceeding 280 characters,
+    replace the truncated tweet text with the full tweet text.
+    """
+    if tweet_data.get("note_tweet"):
+        tweet_data["text"] = tweet_data["note_tweet"]["text"]
+        del tweet_data["note_tweet"]
 
 
 def expand_urls_in_tweets(
@@ -110,3 +124,37 @@ def expand_urls_in_user_url(user_data: dict, delete_entities: bool = True) -> di
     if delete_entities:
         new_user_data.pop("entities", None)
     return new_user_data
+
+
+def remove_none_values(params: dict) -> dict:
+    """
+    Remove key/value pairs with None values from a dictionary.
+
+    Args:
+        params: The dictionary to clean
+
+    Returns:
+        A new dictionary with None values removed
+    """
+    return {k: v for k, v in params.items() if v is not None}
+
+
+def expand_attached_media(params: dict) -> dict:
+    """
+    Include attached media metadata in the request parameters.
+    """
+    params["expansions"] += ",attachments.media_keys"
+    params["tweet.fields"] += ",attachments"
+    params["media.fields"] = ",".join([
+        # media_key, url and type are returned by default, added here for clarity
+        "media_key",
+        "url",
+        "type",
+        "duration_ms",
+        "height",
+        "width",
+        "preview_image_url",
+        "alt_text",
+        "public_metrics",
+    ])
+    return params

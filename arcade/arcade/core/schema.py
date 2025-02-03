@@ -42,7 +42,7 @@ class InputParameter(BaseModel):
     )
 
 
-class ToolInputs(BaseModel):
+class ToolInput(BaseModel):
     """The inputs that a tool accepts."""
 
     parameters: list[InputParameter]
@@ -74,26 +74,29 @@ class OAuth2Requirement(BaseModel):
     """Indicates that the tool requires OAuth 2.0 authorization."""
 
     scopes: Optional[list[str]] = None
-    """The scope(s) needed for authorization, if any."""
+    """The scope(s) needed for the authorized action."""
 
 
 class ToolAuthRequirement(BaseModel):
     """A requirement for authorization to use a tool."""
 
-    # Provider ID and Type needed for the Arcade Engine to look up the auth provider.
+    # Provider ID, Type, and ID needed for the Arcade Engine to look up the auth provider.
     # However, the developer generally does not need to set these directly.
     # Instead, they will use:
     #    @tool(requires_auth=Google(scopes=["profile", "email"]))
     # or
     #    client.auth.authorize(provider=AuthProvider.google, scopes=["profile", "email"])
     #
-    # The Arcade SDK translates these into the appropriate provider ID and type.
+    # The Arcade SDK translates these into the appropriate provider ID (Google) and type (OAuth2).
     # The only time the developer will set these is if they are using a custom auth provider.
     provider_id: Optional[str] = None
-    """A unique provider ID."""
+    """The provider ID configured in Arcade that acts as an alias to well-known configuration."""
 
     provider_type: str
-    """The provider type."""
+    """The type of the authorization provider."""
+
+    id: Optional[str] = None
+    """A provider's unique identifier, allowing the tool to specify a specific authorization provider. Recommended for private tools only."""
 
     oauth2: Optional[OAuth2Requirement] = None
     """The OAuth 2.0 requirement, if any."""
@@ -179,7 +182,7 @@ class ToolDefinition(BaseModel):
     toolkit: ToolkitDefinition
     """The toolkit that contains the tool."""
 
-    inputs: ToolInputs
+    input: ToolInput
     """The inputs that the tool accepts."""
 
     output: ToolOutput
@@ -234,14 +237,18 @@ class ToolContext(BaseModel):
     user_id: str | None = None
     """The user ID for the tool invocation (if any)."""
 
+    def get_auth_token_or_empty(self) -> str:
+        """Retrieve the authorization token, or return an empty string if not available."""
+        return self.authorization.token if self.authorization and self.authorization.token else ""
+
 
 class ToolCallRequest(BaseModel):
     """The request to call (invoke) a tool."""
 
     run_id: str | None = None
     """The globally-unique run ID provided by the Engine."""
-    invocation_id: str | None = None
-    """The globally-unique ID for this tool invocation in the run."""
+    execution_id: str | None = None
+    """The globally-unique ID for this tool execution in the run."""
     created_at: str | None = None
     """The timestamp when the tool invocation was created."""
     tool: ToolReference
@@ -307,13 +314,13 @@ class ToolCallOutput(BaseModel):
 class ToolCallResponse(BaseModel):
     """The response to a tool invocation."""
 
-    invocation_id: str
-    """The globally-unique ID for this tool invocation."""
+    execution_id: str
+    """The globally-unique ID for this tool execution."""
     finished_at: str
-    """The timestamp when the tool invocation finished."""
+    """The timestamp when the tool execution finished."""
     duration: float
-    """The duration of the tool invocation in milliseconds (ms)."""
+    """The duration of the tool execution in milliseconds (ms)."""
     success: bool
-    """Whether the tool invocation was successful."""
+    """Whether the tool execution was successful."""
     output: ToolCallOutput | None = None
     """The output of the tool invocation."""

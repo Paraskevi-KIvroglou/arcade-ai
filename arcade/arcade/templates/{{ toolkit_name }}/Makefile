@@ -9,14 +9,9 @@ install: ## Install the poetry environment and install the pre-commit hooks
 	@echo "📦 Checking if Poetry is installed"
 	@if ! command -v poetry &> /dev/null; then \
 		echo "📦 Installing Poetry with pip"; \
-		pip install poetry; \
+		pip install poetry==1.8.5; \
 	else \
 		echo "📦 Poetry is already installed"; \
-	fi
-	@echo "📦 Checking for poetry.lock file"
-	@if [ ! -f poetry.lock ]; then \
-		echo "📦 Creating poetry.lock file"; \
-		poetry lock; \
 	fi
 	@echo "🚀 Installing package in development mode with all extras"
 	poetry install --all-extras
@@ -28,12 +23,8 @@ build: clean-build ## Build wheel file using poetry
 
 .PHONY: clean-build
 clean-build: ## clean build artifacts
-	rm -rf dist
-
-.PHONY: clean-dist
-clean-dist: ## Clean all built distributions
 	@echo "🗑️ Cleaning dist directory"
-	@rm -rf dist
+	rm -rf dist
 
 .PHONY: test
 test: ## Test the code with pytest
@@ -54,9 +45,10 @@ bump-version: ## Bump the version in the pyproject.toml file
 
 .PHONY: check
 check: ## Run code quality tools.
-	@echo "🚀 Checking Poetry lock file consistency with 'pyproject.toml': Running poetry check --lock"
-	@poetry check --lock
+	@echo "🚀 Checking Poetry lock file consistency with 'pyproject.toml': Running poetry check"
+	@poetry check
 	@echo "🚀 Linting code: Running pre-commit"
 	@poetry run pre-commit run -a
 	@echo "🚀 Static type checking: Running mypy"
-	@poetry run mypy $(git ls-files '*.py')
+	@poetry run mypy --config-file=pyproject.toml
+
